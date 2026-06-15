@@ -49,7 +49,7 @@ function parseInline(text, base = {}) {
 const stripMd = (t) => t.replace(/\*\*/g, "").replace(/`/g, "");
 
 // ---- read + split ----
-const md = fs.readFileSync(path.join(ROOT, "DESIGN.md"), "utf8");
+const md = fs.readFileSync(path.join(ROOT, "DESIGN.md"), "utf8").replace(/\r\n/g, "\n");
 const firstHr = md.indexOf("\n---\n");
 const titleBlock = md.slice(0, firstHr);
 const body = md.slice(firstHr + 5);
@@ -221,26 +221,41 @@ while (i < lines.length) {
   }));
 }
 
-// ---- title page + TOC ----
+// ---- title (cover) page + TOC ----
+const productName = titleLine.split("—")[0].trim() || "SoleMate";
+const subtitle =
+  (titleLine.split("—")[1] || "Architecture & Deployment Design").trim() +
+  " Document";
+const memberMeta = metaLines.find((m) => /group member/i.test(m[0]));
+const members = memberMeta
+  ? memberMeta[1].split("·").map((s) => s.trim()).filter(Boolean)
+  : [];
+const otherMeta = metaLines.filter((m) => !/group member/i.test(m[0]));
+const centered = (children, after = 80) =>
+  new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after }, children });
+
 const titlePage = [
-  new Paragraph({ spacing: { before: 2400 }, children: [] }),
+  new Paragraph({ spacing: { before: 1800 }, children: [] }),
+  centered([new TextRun({ text: productName, bold: true, size: 64, color: "1F3A5F" })], 120),
+  centered([new TextRun({ text: "DevOps Project", bold: true, size: 36, color: "2E5A88" })], 220),
   new Paragraph({
-    alignment: AlignmentType.CENTER,
-    spacing: { after: 200 },
-    children: [new TextRun({ text: titleLine, bold: true, size: 48, color: "1F3A5F" })],
-  }),
-  new Paragraph({
-    alignment: AlignmentType.CENTER, spacing: { after: 600 },
+    alignment: AlignmentType.CENTER, spacing: { after: 700 },
     border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: "2E5A88", space: 4 } },
-    children: [new TextRun({ text: "Architecture & DevOps Design Document", italics: true, size: 26, color: "555555" })],
+    children: [new TextRun({ text: subtitle, italics: true, size: 26, color: "555555" })],
   }),
-  ...metaLines.map((m) => new Paragraph({
-    alignment: AlignmentType.CENTER, spacing: { after: 80 },
-    children: [
-      new TextRun({ text: `${m[0]}:  `, bold: true }),
-      new TextRun({ text: m[1] }),
-    ],
-  })),
+  // Submitted by
+  centered([new TextRun({ text: "Submitted by", bold: true, size: 24, color: "1F3A5F" })], 120),
+  ...members.map((m) =>
+    centered([new TextRun({ text: m, size: 24 })], 60)
+  ),
+  new Paragraph({ spacing: { after: 500 }, children: [] }),
+  // Remaining metadata (project, cloud target, IaC/CI-CD)
+  ...otherMeta.map((m) =>
+    centered([
+      new TextRun({ text: `${m[0]}:  `, bold: true, size: 18, color: "555555" }),
+      new TextRun({ text: m[1], size: 18, color: "555555" }),
+    ])
+  ),
   new Paragraph({ children: [new PageBreak()] }),
   new Paragraph({
     heading: HeadingLevel.HEADING_1,

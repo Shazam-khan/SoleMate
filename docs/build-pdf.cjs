@@ -1,10 +1,10 @@
-/* Build a print-ready HTML from DESIGN.md (diagrams inlined as base64). */
+/* Build a print-ready HTML from DESIGN.md (cover page + diagrams inlined). */
 const fs = require("fs");
 const path = require("path");
 const { marked } = require("marked");
 
 const ROOT = __dirname;
-let md = fs.readFileSync(path.join(ROOT, "DESIGN.md"), "utf8");
+let md = fs.readFileSync(path.join(ROOT, "DESIGN.md"), "utf8").replace(/\r\n/g, "\n");
 
 // Replace each ```mermaid block with the matching rendered PNG (base64-inlined).
 let idx = 0;
@@ -15,8 +15,42 @@ md = md.replace(/```mermaid\r?\n[\s\S]*?```/g, () => {
   return `<img class="diagram" src="data:image/png;base64,${b64}" alt="Diagram ${idx}"/>`;
 });
 
+// Split the title block (before the first --- rule) from the body, and parse
+// the metadata so we can render a proper cover page instead of inline text.
+const firstHr = md.indexOf("\n---\n");
+const titleBlock = md.slice(0, firstHr);
+const body = md.slice(firstHr + 5);
+
+const titleLine = (titleBlock.match(/^#\s+(.+)$/m) || [])[1] || "SoleMate";
+const productName = titleLine.split("—")[0].trim() || "SoleMate";
+const subtitle =
+  (titleLine.split("—")[1] || "Architecture & Deployment Design").trim() +
+  " Document";
+const metaLines = [...titleBlock.matchAll(/^\*\*(.+?)\*\*\s*(.+)$/gm)].map((m) => [
+  m[1].replace(/:$/, "").replace(/\*\*/g, ""),
+  m[2].replace(/\*\*/g, ""),
+]);
+const memberMeta = metaLines.find((m) => /group member/i.test(m[0]));
+const members = memberMeta
+  ? memberMeta[1].split("·").map((s) => s.trim()).filter(Boolean)
+  : [];
+const otherMeta = metaLines.filter((m) => !/group member/i.test(m[0]));
+
+const cover = `
+  <section class="cover">
+    <div class="cover-name">${productName}</div>
+    <div class="cover-devops">DevOps Project</div>
+    <div class="cover-sub">${subtitle}</div>
+    <hr class="cover-rule"/>
+    <div class="cover-by">Submitted by</div>
+    ${members.map((m) => `<div class="cover-member">${m}</div>`).join("")}
+    <div class="cover-meta">
+      ${otherMeta.map((m) => `<div><strong>${m[0]}:</strong> ${m[1]}</div>`).join("")}
+    </div>
+  </section>`;
+
 marked.setOptions({ gfm: true });
-const bodyHtml = marked.parse(md);
+const bodyHtml = marked.parse(body);
 
 const css = `
   @page { size: Letter; margin: 18mm 16mm; }
@@ -25,7 +59,6 @@ const css = `
   h1 { color: #1F3A5F; font-size: 22pt; border-bottom: 2px solid #2E5A88; padding-bottom: 4px; margin-top: 26px; }
   h2 { color: #2E5A88; font-size: 16pt; margin-top: 22px; }
   h3 { color: #2E5A88; font-size: 13pt; margin-top: 16px; }
-  h1:first-of-type { margin-top: 0; }
   p { margin: 8px 0; }
   code { font-family: Consolas, "Courier New", monospace; background: #f4f4f4; padding: 1px 4px; border-radius: 3px; font-size: 9.5pt; }
   pre { background: #f4f4f4; padding: 10px 12px; border-radius: 4px; overflow-x: auto; page-break-inside: avoid; }
@@ -38,8 +71,19 @@ const css = `
   blockquote { border-left: 3px solid #ccc; margin: 8px 0; padding: 2px 12px; color: #555; font-style: italic; }
   h1, h2, h3 { page-break-after: avoid; }
   ul, ol { margin: 8px 0; }
+
+  /* Cover page */
+  .cover { height: 247mm; display: flex; flex-direction: column; align-items: center;
+           justify-content: center; text-align: center; page-break-after: always; }
+  .cover-name { font-size: 52pt; font-weight: 800; color: #1F3A5F; letter-spacing: 1px; }
+  .cover-devops { font-size: 26pt; font-weight: 700; color: #2E5A88; margin-top: 6px; }
+  .cover-sub { font-size: 15pt; font-style: italic; color: #555; margin-top: 10px; }
+  .cover-rule { width: 55%; border: none; border-top: 2px solid #2E5A88; margin: 26px 0; }
+  .cover-by { font-size: 13pt; font-weight: 700; color: #1F3A5F; margin-bottom: 8px; }
+  .cover-member { font-size: 14pt; color: #222; margin: 2px 0; }
+  .cover-meta { margin-top: 48px; font-size: 10pt; color: #555; line-height: 1.8; }
 `;
 
-const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${bodyHtml}</body></html>`;
+const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${cover}${bodyHtml}</body></html>`;
 fs.writeFileSync(path.join(ROOT, "DESIGN.print.html"), html);
-console.log("Wrote docs/DESIGN.print.html (" + idx + " diagrams inlined)");
+console.log("Wrote docs/DESIGN.print.html (" + idx + " diagrams inlined, " + members.length + " members on cover)");
