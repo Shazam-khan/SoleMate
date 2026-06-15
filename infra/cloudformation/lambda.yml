@@ -29,6 +29,12 @@ Resources:
     DependsOn: ImageProcessorInvokePermission
     Properties:
       BucketName: !Sub "${ProjectName}-product-images-${AWS::AccountId}"
+      # Allow a public-read bucket policy (product images are public assets).
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: s3:ObjectCreated:*
@@ -37,6 +43,19 @@ Resources:
               S3Key:
                 Rules:
                   - { Name: prefix, Value: uploads/ }
+
+  # Public read for product images so the browser can load them directly.
+  ProductImagesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProductImagesBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${ProjectName}-product-images-${AWS::AccountId}/*"
 
   # --- Shared Lambda execution role ----------------------------------------
   LambdaRole:

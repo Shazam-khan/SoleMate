@@ -68,6 +68,9 @@ export const config = {
     supabaseUrl: optional("SUPABASE_URL"),
     supabaseKey: optional("API_KEY"),
     bucket: optional("STORAGE_BUCKET", "solemate"),
+    // S3 bucket for product images (AWS deployment).
+    imagesBucket: optional("IMAGES_BUCKET"),
+    region: optional("AWS_REGION", "us-east-1"),
   },
 
   logLevel: optional("LOG_LEVEL", isProduction ? "info" : "debug"),

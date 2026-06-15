@@ -106,7 +106,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: ["s3:PutObject", "s3:GetObject"]
-                Resource: !Sub "arn:aws:s3:::${ProjectName}-product-images/*"
+                Resource: !Sub "arn:aws:s3:::${ProjectName}-product-images-${AWS::AccountId}/*"
 
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -128,6 +128,9 @@ Resources:
             - { Name: PORT, Value: !Ref ContainerPort }
             - { Name: CLIENT_URL, Value: !Ref ClientUrl }
             - { Name: DB_SSL, Value: "true" }
+            - { Name: AWS_REGION, Value: !Ref "AWS::Region" }
+            - Name: IMAGES_BUCKET
+              Value: !Sub "${ProjectName}-product-images-${AWS::AccountId}"
             - Name: DB_HOST
               Value: !ImportValue { "Fn::Sub": "${ProjectName}-DbEndpoint" }
             - Name: DB_PORT

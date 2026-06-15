@@ -1,23 +1,20 @@
 import { db } from "../DB/connect.js";
 import { v4 as uuid } from "uuid";
-import { createClient } from "@supabase/supabase-js";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 
-// Created lazily so the API can boot even when object storage isn't configured.
-// Image upload endpoints will surface a clear error if it's missing.
-let supabaseClient = null;
-const getSupabase = () => {
-  if (!supabaseClient) {
-    if (!config.storage.supabaseUrl || !config.storage.supabaseKey) {
-      throw new Error("Object storage (SUPABASE_URL / API_KEY) is not configured");
+// Created lazily so the API can boot even when storage isn't configured.
+// On ECS the SDK uses the task's IAM role automatically (no static keys).
+let s3Client = null;
+const getS3 = () => {
+  if (!s3Client) {
+    if (!config.storage.imagesBucket) {
+      throw new Error("Image storage (IMAGES_BUCKET) is not configured");
     }
-    supabaseClient = createClient(
-      config.storage.supabaseUrl,
-      config.storage.supabaseKey
-    );
+    s3Client = new S3Client({ region: config.storage.region });
   }
-  return supabaseClient;
+  return s3Client;
 };
 
 //get all products
@@ -305,60 +302,36 @@ export const getImageById = async (req, res) => {
 
 export const postImage = async (req, res) => {
   const { id } = req.params;
-  const { filename } = req.body;
   try {
     const file = req.file;
-
     if (!file) {
-      return res.status(400).json({ message: "Image file is required." });
+      return res
+        .status(400)
+        .json({ message: "Image file is required.", Images: null, error: true });
     }
 
-    if (!filename || !file) {
-      return res.status(400).json({
-        message: "Filename and image file are required.",
-        Images: null,
-        error: true,
-      });
-    }
+    const bucket = config.storage.imagesBucket;
+    // Upload under uploads/ — the image-processor Lambda watches this prefix.
+    const ext = (file.mimetype.split("/")[1] || "img").replace("jpeg", "jpg");
+    const key = `uploads/${uuid()}.${ext}`;
 
-    const supabase = getSupabase();
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from(config.storage.bucket)
-      .upload(`public/${filename}`, file.buffer, {
-        cacheControl: "3600",
-        upsert: false, // Prevent overwriting
-        contentType: file.mimetype, // Set correct MIME type
-      });
+    await getS3().send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+        CacheControl: "public, max-age=86400",
+      })
+    );
 
-    if (uploadError) {
-      return res.status(500).json({
-        message: `Image upload failed: ${uploadError.message}`,
-        Images: null,
-        error: true,
-      });
-    }
-
-    logger.debug("File uploaded successfully:", uploadData);
-
-    const { data: publicUrlData } = supabase.storage
-      .from(config.storage.bucket)
-      .getPublicUrl(`public/${filename}`);
-    const publicUrl = publicUrlData.publicUrl;
-
-    logger.debug("Public URL:", publicUrl);
+    const publicUrl = `https://${bucket}.s3.${config.storage.region}.amazonaws.com/${key}`;
 
     const iId = uuid();
-
     const images = await db.query(
       `INSERT INTO "P_Images" (id, image_url, product_id) VALUES ($1, $2, $3) RETURNING *`,
       [iId, publicUrl, id]
     );
-
-    if (images.rows.length === 0) {
-      return res
-        .status(500)
-        .json({ message: "Insert failed", Images: null, error: true });
-    }
 
     res.status(200).json({
       message: "Image uploaded and metadata saved.",
@@ -366,7 +339,7 @@ export const postImage = async (req, res) => {
       error: false,
     });
   } catch (error) {
-    logger.error("Error inserting image:", error);
+    logger.error({ err: error }, "postImage failed");
     res
       .status(500)
       .json({ message: "Internal Server Error", Images: null, error: true });
