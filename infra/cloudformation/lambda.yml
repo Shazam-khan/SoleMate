@@ -12,6 +12,10 @@ Parameters:
   LambdaCodeBucket:
     Type: String
     Description: S3 bucket holding the zipped Lambda artifacts (uploaded by CI)
+  SenderEmail:
+    Type: String
+    Default: no-reply@example.com
+    Description: SES-verified "from" address for order confirmation emails
   WebhookCodeKey:
     Type: String
     Default: lambdas/stripe-webhook.zip
@@ -156,7 +160,7 @@ Resources:
       Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref EmailCodeKey }
       Environment:
         Variables:
-          FROM_EMAIL: !Sub "no-reply@example.com"
+          FROM_EMAIL: !Ref SenderEmail
 
 Outputs:
   WebhookUrl:

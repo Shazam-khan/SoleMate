@@ -73,5 +73,10 @@ export const config = {
     region: optional("AWS_REGION", "us-east-1"),
   },
 
+  // Order-confirmation email (sent via the order-email Lambda + SES).
+  email: {
+    orderEmailFunction: optional("ORDER_EMAIL_FUNCTION"),
+  },
+
   logLevel: optional("LOG_LEVEL", isProduction ? "info" : "debug"),
 };

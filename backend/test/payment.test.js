@@ -219,13 +219,16 @@ describe('Payment Controller', () => {
         }]
       });
 
-      // Mock update order query
+      // Mock update order query (returns the completed order)
       db.query.mockResolvedValueOnce({
-        rows: [{ o_id: mockOrderId, is_complete: true }]
+        rows: [{ o_id: mockOrderId, is_complete: true, user_u_id: 'user-1', total_amount: '100.00' }]
       });
 
       // Mock COMMIT transaction
       db.query.mockResolvedValueOnce({});
+
+      // Mock the post-commit lookup of the user's email (for the confirmation email)
+      db.query.mockResolvedValueOnce({ rows: [{ email: 'buyer@example.com' }] });
 
       const response = await request(app)
         .put(`/api/order/${mockOrderId}/payments/${mockPaymentId}`)
@@ -242,7 +245,8 @@ describe('Payment Controller', () => {
         }
       });
 
-      expect(db.query).toHaveBeenCalledTimes(4);
+      // BEGIN, UPDATE payment, UPDATE Order, COMMIT, SELECT user email
+      expect(db.query).toHaveBeenCalledTimes(5);
       expect(db.query).toHaveBeenNthCalledWith(1, 'BEGIN');
       expect(db.query).toHaveBeenNthCalledWith(
         2,
@@ -255,6 +259,11 @@ describe('Payment Controller', () => {
         [mockOrderId]
       );
       expect(db.query).toHaveBeenNthCalledWith(4, 'COMMIT');
+      expect(db.query).toHaveBeenNthCalledWith(
+        5,
+        expect.stringContaining('SELECT email'),
+        ['user-1']
+      );
     });
 
     it('should return 404 if payment is not found', async () => {

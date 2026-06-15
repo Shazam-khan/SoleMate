@@ -107,6 +107,9 @@ Resources:
               - Effect: Allow
                 Action: ["s3:PutObject", "s3:GetObject"]
                 Resource: !Sub "arn:aws:s3:::${ProjectName}-product-images-${AWS::AccountId}/*"
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-order-email"
 
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -131,6 +134,8 @@ Resources:
             - { Name: AWS_REGION, Value: !Ref "AWS::Region" }
             - Name: IMAGES_BUCKET
               Value: !Sub "${ProjectName}-product-images-${AWS::AccountId}"
+            - Name: ORDER_EMAIL_FUNCTION
+              Value: !Sub "${ProjectName}-order-email"
             - Name: DB_HOST
               Value: !ImportValue { "Fn::Sub": "${ProjectName}-DbEndpoint" }
             - Name: DB_PORT

@@ -1,6 +1,25 @@
 import { db } from "../DB/connect.js";
 import { v4 as uuid } from "uuid";
 import { logger } from "../utils/logger.js";
+import { config } from "../config/env.js";
+import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+
+// Fire the order-confirmation email via the order-email Lambda. Async
+// ("Event") and best-effort: a failure here must never fail the order.
+let lambdaClient = null;
+const invokeOrderEmail = async (payload) => {
+  if (!config.email.orderEmailFunction) return; // not configured -> skip
+  if (!lambdaClient) {
+    lambdaClient = new LambdaClient({ region: config.storage.region });
+  }
+  await lambdaClient.send(
+    new InvokeCommand({
+      FunctionName: config.email.orderEmailFunction,
+      InvocationType: "Event",
+      Payload: Buffer.from(JSON.stringify(payload)),
+    })
+  );
+};
 
 // Create a payment
 export const createPayment = async (req, res) => {
@@ -85,6 +104,7 @@ export const updatePaymentStatus = async (req, res) => {
     }
 
     // If payment is completed, mark the associated order as completed
+    let completedOrder = null;
     if (paymentStatus === "COMPLETED") {
       const orderResult = await db.query(
         `UPDATE "Order"
@@ -101,9 +121,37 @@ export const updatePaymentStatus = async (req, res) => {
           error: true,
         });
       }
+      completedOrder = orderResult.rows[0];
     }
 
     await db.query("COMMIT");
+
+    // Send the confirmation email after the order is committed (best-effort).
+    if (completedOrder) {
+      try {
+        const userRes = await db.query(
+          'SELECT email FROM "Users" WHERE u_id = $1',
+          [completedOrder.user_u_id]
+        );
+        const to = userRes.rows[0]?.email;
+        if (to) {
+          await invokeOrderEmail({
+            to,
+            orderId: completedOrder.o_id,
+            total: Number(completedOrder.total_amount || 0).toFixed(2),
+          });
+          logger.info(
+            { orderId: completedOrder.o_id },
+            "Order confirmation email queued"
+          );
+        }
+      } catch (emailErr) {
+        logger.warn(
+          { err: emailErr?.message },
+          "Order email invocation failed (non-blocking)"
+        );
+      }
+    }
 
     return res.status(200).json({
       message: "Payment status updated successfully.",
