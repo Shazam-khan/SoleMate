@@ -56,7 +56,7 @@ Resources:
       EngineVersion: "16"
       DBInstanceClass: !Ref DbInstanceClass
       AllocatedStorage: !Ref AllocatedStorage
-      StorageType: gp3
+      StorageType: gp2
       StorageEncrypted: true
       DBName: !Ref DbName
       MasterUsername: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:username}}"
@@ -67,7 +67,7 @@ Resources:
       VPCSecurityGroups:
         - !ImportValue
           Fn::Sub: "${ProjectName}-RdsSgId"
-      BackupRetentionPeriod: 7
+      BackupRetentionPeriod: 0 # 0 disables automated backups (required on the free plan)
       DeletionProtection: false # set true in production
 
   # Attach the secret to the instance so rotation can target it.
