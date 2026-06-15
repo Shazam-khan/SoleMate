@@ -6,7 +6,7 @@ A full-stack ecommerce application for footwear.
 - **Backend:** Node.js + Express (REST API)
 - **Database:** PostgreSQL
 - **Payments:** Stripe
-- **Image storage:** Supabase Storage (S3 in the cloud design)
+- **Image storage:** Amazon S3 (product images)
 
 ---
 
@@ -18,7 +18,7 @@ A full-stack ecommerce application for footwear.
 │  (Vite)    │ ◀─────────────── │  (Node.js)          │ ◀──────────── │              │
 └────────────┘   JSON + cookie  └─────────────────────┘               └──────────────┘
                                        │      │
-                              Stripe ──┘      └── Supabase / S3 (product images)
+                              Stripe ──┘      └── Amazon S3 (product images)
 ```
 
 The backend is layered: **routes → middleware → controllers → DB pool**, with
@@ -112,7 +112,7 @@ Key variables:
 | `DATABASE_URL` *or* `DB_*` | Database connection |
 | `CLIENT_URL` | Allowed CORS origin(s), comma-separated |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Stripe |
-| `SUPABASE_URL` / `API_KEY` | Object storage for product images |
+| `IMAGES_BUCKET` / `AWS_REGION` | S3 bucket for product images (set automatically by the backend CloudFormation stack) |
 
 The frontend reads `VITE_API_URL` (see `Frontend/.env.example`).
 
