@@ -28,7 +28,7 @@ Resources:
     Type: AWS::S3::Bucket
     DependsOn: ImageProcessorInvokePermission
     Properties:
-      BucketName: !Sub "${ProjectName}-product-images"
+      BucketName: !Sub "${ProjectName}-product-images-${AWS::AccountId}"
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: s3:ObjectCreated:*
@@ -63,7 +63,7 @@ Resources:
                   - !ImportValue { "Fn::Sub": "${ProjectName}-DbSecretArn" }
               - Effect: Allow
                 Action: ["s3:GetObject", "s3:PutObject"]
-                Resource: !Sub "arn:aws:s3:::${ProjectName}-product-images/*"
+                Resource: !Sub "arn:aws:s3:::${ProjectName}-product-images-${AWS::AccountId}/*"
               - Effect: Allow
                 Action: ["ses:SendEmail"]
                 Resource: "*"
@@ -122,7 +122,7 @@ Resources:
       FunctionName: !GetAtt ImageProcessorFunction.Arn
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
-      SourceArn: !Sub "arn:aws:s3:::${ProjectName}-product-images"
+      SourceArn: !Sub "arn:aws:s3:::${ProjectName}-product-images-${AWS::AccountId}"
       SourceAccount: !Ref AWS::AccountId
 
   # --- order-email: sends confirmation email (invoked by the API) ----------
