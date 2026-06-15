@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  SoleMate - Serverless event stack. Product-images S3 bucket plus three Lambda
+  functions: stripe-webhook (public Function URL), image-processor (S3 trigger),
+  and order-email (invoked by the API). Code is packaged by CI and uploaded to
+  an S3 code bucket. Depends on the network and database stacks.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: solemate
+  LambdaCodeBucket:
+    Type: String
+    Description: S3 bucket holding the zipped Lambda artifacts (uploaded by CI)
+  WebhookCodeKey:
+    Type: String
+    Default: lambdas/stripe-webhook.zip
+  ImageCodeKey:
+    Type: String
+    Default: lambdas/image-processor.zip
+  EmailCodeKey:
+    Type: String
+    Default: lambdas/order-email.zip
+
+Resources:
+  # --- Product images bucket (triggers the image processor) ----------------
+  ProductImagesBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: ImageProcessorInvokePermission
+    Properties:
+      BucketName: !Sub "${ProjectName}-product-images"
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ImageProcessorFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - { Name: prefix, Value: uploads/ }
+
+  # --- Shared Lambda execution role ----------------------------------------
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        # Lambdas that touch the DB run in the VPC:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: solemate-lambda
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !ImportValue { "Fn::Sub": "${ProjectName}-DbSecretArn" }
+              - Effect: Allow
+                Action: ["s3:GetObject", "s3:PutObject"]
+                Resource: !Sub "arn:aws:s3:::${ProjectName}-product-images/*"
+              - Effect: Allow
+                Action: ["ses:SendEmail"]
+                Resource: "*"
+
+  # --- stripe-webhook: confirms payment, marks order complete --------------
+  StripeWebhookFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-stripe-webhook"
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Timeout: 15
+      Role: !GetAtt LambdaRole.Arn
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref WebhookCodeKey }
+      VpcConfig:
+        SecurityGroupIds:
+          - !ImportValue { "Fn::Sub": "${ProjectName}-EcsSgId" }
+        SubnetIds: !Split
+          - ","
+          - !ImportValue { "Fn::Sub": "${ProjectName}-PrivateAppSubnets" }
+      Environment:
+        Variables:
+          DB_SECRET_ARN: !ImportValue { "Fn::Sub": "${ProjectName}-DbSecretArn" }
+          DB_HOST: !ImportValue { "Fn::Sub": "${ProjectName}-DbEndpoint" }
+          DB_NAME: !ImportValue { "Fn::Sub": "${ProjectName}-DbName" }
+
+  WebhookUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref StripeWebhookFunction
+      AuthType: NONE # Stripe authenticates via webhook signature, not IAM
+
+  WebhookUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StripeWebhookFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  # --- image-processor: generates thumbnails on upload ---------------------
+  ImageProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-image-processor"
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Timeout: 30
+      MemorySize: 512
+      Role: !GetAtt LambdaRole.Arn
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref ImageCodeKey }
+
+  ImageProcessorInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ImageProcessorFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:aws:s3:::${ProjectName}-product-images"
+      SourceAccount: !Ref AWS::AccountId
+
+  # --- order-email: sends confirmation email (invoked by the API) ----------
+  OrderEmailFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-order-email"
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Timeout: 15
+      Role: !GetAtt LambdaRole.Arn
+      Code: { S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref EmailCodeKey }
+      Environment:
+        Variables:
+          FROM_EMAIL: !Sub "no-reply@example.com"
+
+Outputs:
+  WebhookUrl:
+    Description: Set this as the Stripe webhook endpoint
+    Value: !GetAtt WebhookUrl.FunctionUrl
+  ProductImagesBucket:
+    Value: !Ref ProductImagesBucket
+    Export: { Name: !Sub "${ProjectName}-ImagesBucket" }

@@ -1,6 +1,9 @@
 import { db } from "../DB/connect.js";
 import jwt from "jsonwebtoken";
-//all user related middleware goes here
+import { config } from "../config/env.js";
+import { logger } from "../utils/logger.js";
+
+// Validate that a :userId path param refers to a real user, and stash the row.
 export const ValidateUserId = async (req, res, next, id) => {
   try {
     const user = await db.query('SELECT * FROM "Users" WHERE u_id = $1', [id]);
@@ -8,15 +11,18 @@ export const ValidateUserId = async (req, res, next, id) => {
     if (user.rows.length === 0) {
       return res.status(404).json({ message: "User not found", error: true });
     }
-    req.user = user.rows[0];
+    req.targetUser = user.rows[0];
     next();
   } catch (error) {
+    logger.error({ err: error }, "ValidateUserId failed");
     res.status(500).json({ message: "Internal Server Error", error: true });
   }
 };
 
+// Allow only authenticated admins. Relies on the token carrying a real boolean
+// `isAdmin` (see authController) — a string like 'N' must NOT be treated as true.
 export const verifyAdmin = (req, res, next) => {
-  const token = req.cookies.token;
+  const token = req.cookies?.token;
   if (!token) {
     return res
       .status(403)
@@ -24,19 +30,10 @@ export const verifyAdmin = (req, res, next) => {
   }
 
   try {
-    // Verify token
-    console.log("token:" + token);
-    const decoded = jwt.verify(token, "my_secret");
-    if (!decoded) {
-      return res
-        .status(403)
-        .json({ message: "Access denied, invalid token.", error: true });
-    }
+    const decoded = jwt.verify(token, config.jwt.secret);
+    req.user = decoded;
 
-    req.user = decoded; // Attach the decoded user info to the request object
-
-    // Check if user is admin
-    if (!req.user.isAdmin) {
+    if (decoded.isAdmin !== true) {
       return res
         .status(403)
         .json({ message: "Access denied, you are not an admin.", error: true });
@@ -44,7 +41,7 @@ export const verifyAdmin = (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error("Token verification error:", error.message);
-    return res.status(400).json({ message: "Invalid token.", error: true });
+    logger.warn({ err: error.message }, "Admin token verification failed");
+    return res.status(401).json({ message: "Invalid token.", error: true });
   }
 };

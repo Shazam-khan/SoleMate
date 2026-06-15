@@ -1,0 +1,10 @@
+{
+  "name": "solemate-stripe-webhook",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "pg": "^8.13.0",
+    "stripe": "^18.0.0"
+  }
+}

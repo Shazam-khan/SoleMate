@@ -25,10 +25,10 @@ const ProductDetail = () => {
     try {
       setLoading(true);
       const [productRes, imagesRes, categoryRes, sizesRes] = await Promise.all([
-        axios.get(`http://localhost:5000/api/products/${productId}`),
-        axios.get(`http://localhost:5000/api/products/${productId}/images`),
-        axios.get(`http://localhost:5000/api/products/${productId}/category`),
-        axios.get(`http://localhost:5000/api/products/${productId}/size`),
+        axios.get(`${import.meta.env.VITE_API_URL}/api/products/${productId}`),
+        axios.get(`${import.meta.env.VITE_API_URL}/api/products/${productId}/images`),
+        axios.get(`${import.meta.env.VITE_API_URL}/api/products/${productId}/category`),
+        axios.get(`${import.meta.env.VITE_API_URL}/api/products/${productId}/size`),
       ]);
 
       setProduct(productRes.data.Product);
@@ -49,7 +49,7 @@ const ProductDetail = () => {
   const fetchOrderId = async () => {
     try {
       const response = await axios.get(
-        `http://localhost:5000/api/users/${userId}/order/current`,
+        `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/current`,
         { withCredentials: true }
       );
       setOrderId(response.data.Orders.o_id); // Save the current order ID
@@ -89,7 +89,7 @@ const ProductDetail = () => {
       if (orderId) {
         // Add to existing order
         const response = await axios.post(
-          `http://localhost:5000/api/users/${userId}/order/${orderId}/order_details`,
+          `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}/order_details`,
           {
             quantity,
             p_id: productId,
@@ -108,7 +108,7 @@ const ProductDetail = () => {
         const address = "Default Address, Update Later";
 
         const response = await axios.post(
-          `http://localhost:5000/api/users/${userId}/order`,
+          `${import.meta.env.VITE_API_URL}/api/users/${userId}/order`,
           {
             orderDate,
             promisedDate,

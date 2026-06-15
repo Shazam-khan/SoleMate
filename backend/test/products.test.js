@@ -28,6 +28,12 @@ jest.mock('../middleware/Products', () => ({
   }),
 }));
 
+// Mock admin guard so write routes are reachable in unit tests
+jest.mock('../middleware/user', () => ({
+  verifyAdmin: jest.fn((req, res, next) => next()),
+  ValidateUserId: jest.fn((req, res, next) => next()),
+}));
+
 // Mock Multer
 jest.mock('multer', () => {
   const multerMock = () => ({

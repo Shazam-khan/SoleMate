@@ -16,14 +16,14 @@ const Cart = () => {
   useEffect(() => {
     const fetchCartItems = async () => {
       try {
-        const response = await axios.get(`http://localhost:5000/api/auth/me`, {
+        const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/auth/me`, {
           withCredentials: true, // Send cookies for authentication
         });
         setIsLoggedIn(true); // User is logged in
 
         // Fetch the latest/current order
         const orderResponse = await axios.get(
-          `http://localhost:5000/api/users/${userId}/order/current`,
+          `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/current`,
           { withCredentials: true }
         );
 
@@ -39,7 +39,7 @@ const Cart = () => {
 
         // Fetch order details for the latest order
         const cartResponse = await axios.get(
-          `http://localhost:5000/api/users/${userId}/order/${latestOrder.o_id}/order_details`,
+          `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${latestOrder.o_id}/order_details`,
           { withCredentials: true }
         );
 
@@ -49,7 +49,7 @@ const Cart = () => {
         const updatedItems = await Promise.all(
           orderDetails.map(async (item) => {
             const productResponse = await axios.get(
-              `http://localhost:5000/api/products/${item.product_p_id}`,
+              `${import.meta.env.VITE_API_URL}/api/products/${item.product_p_id}`,
               { withCredentials: true }
             );
             return {
@@ -107,7 +107,7 @@ const Cart = () => {
       const updatedPrice = Math.floor(updatedPricef);
       
       const response = await axios.put(
-        `http://localhost:5000/api/users/${userId}/order/${orderId}/order_details/${od_id}`,
+        `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}/order_details/${od_id}`,
         {
           quantity: newQuantity,
           odPrice: updatedPrice,
@@ -154,7 +154,7 @@ const Cart = () => {
 
     try {
       await axios.delete(
-        `http://localhost:5000/api/users/${userId}/order/${orderId}`,
+        `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}`,
         { withCredentials: true }
       );
       setCartItems([]); // Clear the cart on the frontend
@@ -173,7 +173,7 @@ const Cart = () => {
 
     try {
       await axios.delete(
-        `http://localhost:5000/api/users/${userId}/order/${orderId}/order_details/${od_id}`,
+        `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}/order_details/${od_id}`,
         { withCredentials: true }
       );
       setCartItems((prevItems) =>

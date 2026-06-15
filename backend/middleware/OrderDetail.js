@@ -1,4 +1,5 @@
 import { db } from "../DB/connect.js";
+import { logger } from "../utils/logger.js";
 
 export const verifyOrderDetail = async (req, res, next, id) => {
   try {
@@ -14,7 +15,7 @@ export const verifyOrderDetail = async (req, res, next, id) => {
     req.orderdetails = orderDetail.rows[0];
     next();
   } catch (error) {
-    console.error(error);
+    logger.error({ err: error }, "verifyOrderDetail failed");
     return res
       .status(500)
       .json({ message: "Internal server Error", error: true, Orders: null });

@@ -1,10 +1,24 @@
 import { db } from "../DB/connect.js";
 import { v4 as uuid } from "uuid";
 import { createClient } from "@supabase/supabase-js";
-import dotenv from "dotenv";
+import { config } from "../config/env.js";
+import { logger } from "../utils/logger.js";
 
-dotenv.config();
-const supabase = createClient(process.env.SUPABASE_URL, process.env.API_KEY);
+// Created lazily so the API can boot even when object storage isn't configured.
+// Image upload endpoints will surface a clear error if it's missing.
+let supabaseClient = null;
+const getSupabase = () => {
+  if (!supabaseClient) {
+    if (!config.storage.supabaseUrl || !config.storage.supabaseKey) {
+      throw new Error("Object storage (SUPABASE_URL / API_KEY) is not configured");
+    }
+    supabaseClient = createClient(
+      config.storage.supabaseUrl,
+      config.storage.supabaseKey
+    );
+  }
+  return supabaseClient;
+};
 
 //get all products
 export const getAllProducts = async (req, res) => {
@@ -57,7 +71,7 @@ export const createProduct = async (req, res) => {
       .status(500)
       .json({ message: "Internal Server error", id: null, error: true });
 
-    console.log(error);
+    logger.error({ err: error });
   }
 };
 
@@ -88,7 +102,7 @@ export const UpdateProduct = async (req, res) => {
       error: false,
     });
   } catch (error) {
-    console.log(error);
+    logger.error({ err: error });
     res
       .status(500)
       .json({ message: "Internal Server Error", Product: null, error: true });
@@ -114,16 +128,23 @@ export const DeleteProduct = async (req, res) => {
       [id]
     );
 
+    if (result.rows.length === 0) {
+      await db.query("ROLLBACK");
+      return res.status(404).json({ message: "Product not found", error: true });
+    }
+
     // Commit transaction
     await db.query("COMMIT");
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Product not found" });
-    }
+    return res.status(200).json({
+      message: "Product deleted successfully",
+      Product: result.rows[0],
+      error: false,
+    });
   } catch (error) {
     await db.query("ROLLBACK");
-    console.log(error);
-    res.status(500).json({ message: "Error deleting project", error: true });
+    logger.error({ err: error }, "DeleteProduct failed");
+    res.status(500).json({ message: "Error deleting product", error: true });
   }
 };
 
@@ -224,7 +245,16 @@ export const deleteCategory = async (req, res) => {
   const { cId } = req.params;
 
   try {
-    await db.query("DELETE FROM Category WHERE c_id = $1 RETURNING *", [cId]);
+    const deleteResult = await db.query(
+      "DELETE FROM category WHERE c_id = $1 RETURNING *",
+      [cId]
+    );
+
+    if (deleteResult.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Category not found", error: true });
+    }
 
     res.status(200).json({
       message: "Category deleted successfully",
@@ -258,7 +288,7 @@ export const getAllProductImages = async (req, res) => {
       .status(200)
       .json({ message: "Images found", Images: images.rows, error: false });
   } catch (error) {
-    console.log(error);
+    logger.error({ err: error });
     res
       .status(500)
       .json({ message: "Internal Server Error", Images: null, error: true });
@@ -274,8 +304,6 @@ export const getImageById = async (req, res) => {
 export const postImage = async (req, res) => {
   const { id } = req.params;
   const { filename } = req.body;
-  console.log("File received:", req.file);
-  console.log("Body:", req.body);
   try {
     const file = req.file;
 
@@ -291,8 +319,9 @@ export const postImage = async (req, res) => {
       });
     }
 
+    const supabase = getSupabase();
     const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("solemate")
+      .from(config.storage.bucket)
       .upload(`public/${filename}`, file.buffer, {
         cacheControl: "3600",
         upsert: false, // Prevent overwriting
@@ -307,14 +336,14 @@ export const postImage = async (req, res) => {
       });
     }
 
-    console.log("File uploaded successfully:", uploadData);
+    logger.debug("File uploaded successfully:", uploadData);
 
     const { data: publicUrlData } = supabase.storage
-      .from("solemate")
+      .from(config.storage.bucket)
       .getPublicUrl(`public/${filename}`);
     const publicUrl = publicUrlData.publicUrl;
 
-    console.log("Public URL:", publicUrl);
+    logger.debug("Public URL:", publicUrl);
 
     const iId = uuid();
 
@@ -335,7 +364,7 @@ export const postImage = async (req, res) => {
       error: false,
     });
   } catch (error) {
-    console.error("Error inserting image:", error);
+    logger.error("Error inserting image:", error);
     res
       .status(500)
       .json({ message: "Internal Server Error", Images: null, error: true });
@@ -352,9 +381,13 @@ export const updateImage = async (req, res) => {
       [image_url, iId]
     );
 
-    res.status(201).json({
+    if (updatedImage.rows.length === 0) {
+      return res.status(404).json({ message: "Image not found", error: true });
+    }
+
+    res.status(200).json({
       message: "Image Updated successfully",
-      Images: updateImage[0].rows,
+      Images: updatedImage.rows[0],
       error: false,
     });
   } catch (error) {
@@ -375,7 +408,7 @@ export const deleteImage = async (req, res) => {
       error: false,
     });
   } catch (error) {
-    console.log(error);
+    logger.error({ err: error });
     res
       .status(500)
       .json({ message: "Internal Server Error", Images: null, error: true });
@@ -401,7 +434,7 @@ export const getAllSizes = async (req, res) => {
       .status(200)
       .json({ message: "Records found", Sizes: sizes.rows, error: false });
   } catch (error) {
-    console.log(error);
+    logger.error({ err: error });
     return res
       .status(500)
       .json({ message: "Internal Server Error", Sizes: null, error: true });
@@ -438,7 +471,7 @@ export const postSize = async (req, res) => {
       error: false,
     });
   } catch (error) {
-    console.log(error);
+    logger.error({ err: error });
     return res
       .status(500)
       .json({ message: "Internal Server Error", Sizes: null, error: true });
@@ -468,7 +501,7 @@ export const updateSizeInfo = async (req, res) => {
       error: false,
     });
   } catch (error) {
-    console.log(error);
+    logger.error({ err: error });
     res
       .status(500)
       .json({ message: "Internal Server Error", Sizes: null, error: true });
@@ -486,7 +519,7 @@ export const deleteSieInfo = async (req, res) => {
       error: false,
     });
   } catch (error) {
-    console.log(error);
+    logger.error({ err: error });
     res
       .status(500)
       .json({ message: "Internal Server Error", Sizes: null, error: true });

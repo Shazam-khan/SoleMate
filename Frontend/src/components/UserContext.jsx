@@ -12,7 +12,7 @@ export const UserProvider = ({ children }) => {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const response = await axios.get("http://localhost:5000/api/auth/me", {
+        const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/auth/me`, {
           withCredentials: true, // Send the JWT cookie
         });
         const { userId, email, isAdmin } = response.data; // Include email in the response
@@ -34,7 +34,7 @@ export const UserProvider = ({ children }) => {
   const handleLogin = async (email, password) => {
     try {
       const response = await axios.post(
-        "http://localhost:5000/api/auth/login",
+        `${import.meta.env.VITE_API_URL}/api/auth/login`,
         { email, password },
         { withCredentials: true } // Ensure cookies are sent
       );
@@ -53,7 +53,7 @@ export const UserProvider = ({ children }) => {
   const logout = async () => {
     try {
       await axios.post(
-        "http://localhost:5000/auth/logout",
+        `${import.meta.env.VITE_API_URL}/api/auth/logout`,
         {},
         { withCredentials: true } // Ensure cookies are sent
       );

@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  SoleMate - Database stack. RDS PostgreSQL in the private data subnets, with
+  credentials generated and stored in Secrets Manager. Depends on the network stack.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: solemate
+  DbName:
+    Type: String
+    Default: solemate
+  DbUsername:
+    Type: String
+    Default: solemate
+  DbInstanceClass:
+    Type: String
+    Default: db.t3.micro
+  MultiAz:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false" # set "true" for production
+  AllocatedStorage:
+    Type: Number
+    Default: 20
+
+Resources:
+  # Generates a random password and stores the full credential set as JSON.
+  DbSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${ProjectName}/db"
+      Description: SoleMate RDS master credentials
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username":"${DbUsername}"}'
+        GenerateStringKey: "password"
+        PasswordLength: 24
+        ExcludeCharacters: '"@/\ '
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: SoleMate private data subnets
+      SubnetIds: !Split
+        - ","
+        - !ImportValue
+          Fn::Sub: "${ProjectName}-PrivateDataSubnets"
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub "${ProjectName}-db"
+      Engine: postgres
+      EngineVersion: "16"
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref AllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      DBName: !Ref DbName
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbSecret}:SecretString:password}}"
+      MultiAZ: !Ref MultiAz
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups:
+        - !ImportValue
+          Fn::Sub: "${ProjectName}-RdsSgId"
+      BackupRetentionPeriod: 7
+      DeletionProtection: false # set true in production
+
+  # Attach the secret to the instance so rotation can target it.
+  SecretAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref DbSecret
+      TargetId: !Ref Database
+      TargetType: AWS::RDS::DBInstance
+
+Outputs:
+  DbEndpoint:
+    Value: !GetAtt Database.Endpoint.Address
+    Export: { Name: !Sub "${ProjectName}-DbEndpoint" }
+  DbPort:
+    Value: !GetAtt Database.Endpoint.Port
+    Export: { Name: !Sub "${ProjectName}-DbPort" }
+  DbName:
+    Value: !Ref DbName
+    Export: { Name: !Sub "${ProjectName}-DbName" }
+  DbSecretArn:
+    Value: !Ref DbSecret
+    Export: { Name: !Sub "${ProjectName}-DbSecretArn" }

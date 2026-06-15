@@ -1,5 +1,6 @@
 import { db } from "../DB/connect.js";
 import { v4 as uuid } from "uuid";
+import { logger } from "../utils/logger.js";
 export const getAllOrderDetails = async (req, res) => {
   try {
     const { userId } = req.params; // Extract authenticated user's ID from the token
@@ -22,7 +23,7 @@ export const getAllOrderDetails = async (req, res) => {
       OrderDetails: orderDetails.rows,
     });
   } catch (error) {
-    console.error("Error retrieving order details:", error);
+    logger.error("Error retrieving order details:", error);
     return res.status(500).json({
       message: "Internal server error",
       error: true,
@@ -53,7 +54,7 @@ export const getAllOrderDetailsByoId = async (req, res) => {
       OrderDetails: orderDetails.rows,
     });
   } catch (error) {
-    console.error("Error retrieving order details:", error);
+    logger.error("Error retrieving order details:", error);
     return res.status(500).json({
       message: "Internal server error",
       error: true,
@@ -86,7 +87,7 @@ export const getOrderDetailById = async (req, res) => {
       OrderDetails: result.rows[0],
     });
   } catch (error) {
-    console.error("Error retrieving order detail:", error);
+    logger.error("Error retrieving order detail:", error);
     return res.status(500).json({
       message: "Internal server error",
       error: true,
@@ -163,7 +164,7 @@ export const createOrderDetail = async (req, res) => {
     });
   } catch (error) {
     await db.query("ROLLBACK");
-    console.error(error);
+    logger.error(error);
     return res.status(500).json({
       message: "Error adding order detail",
       error: true,
@@ -229,7 +230,7 @@ export const patchDetail = async (req, res) => {
       OrderDetails: updatedOrderDetail,
     });
   } catch (error) {
-    console.log(error);
+    logger.debug(error);
     return res.status(500).json({
       message: "Error updating order detail",
       error: true,
@@ -289,7 +290,7 @@ export const deleteDetail = async (req, res) => {
       OrderDetails: null,
     });
   } catch (error) {
-    console.log(error);
+    logger.debug(error);
     return res.status(500).json({
       message: "Error deleting order detail",
       error: true,

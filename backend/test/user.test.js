@@ -15,7 +15,7 @@ jest.mock('../DB/connect.js', () => {
 // Mock middleware - BEFORE importing routes
 jest.mock('../middleware/user.js', () => ({
   ValidateUserId: jest.fn((req, res, next) => {
-    req.user = {
+    req.targetUser = {
       u_id: req.params.userId,
       first_name: 'MockFirst',
       last_name: 'MockLast',
@@ -89,11 +89,14 @@ describe('User Routes', () => {
 
     const response = await request.get('/api/users');
     expect(response.status).toBe(200);
+    // Passwords must be stripped from the response.
+    const expectedUsers = mockUsers.map(({ password, ...rest }) => rest);
     expect(response.body).toEqual({
       message: 'Users Found',
-      Users: mockUsers,
+      Users: expectedUsers,
       error: false,
     });
+    expect(JSON.stringify(response.body)).not.toContain('pass1');
     expect(db.query).toHaveBeenCalledWith('SELECT * FROM "Users"');
     expect(require('../middleware/user.js').verifyAdmin).toHaveBeenCalled();
   });
@@ -105,14 +108,13 @@ describe('User Routes', () => {
       first_name: 'MockFirst',
       last_name: 'MockLast',
       email: 'mock@example.com',
-      password: 'mockpassword',
       phone_number: '1234567890',
     };
     const response = await request.get('/api/users/1');
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       message: 'User found',
-      User: mockUser,
+      User: mockUser, // password stripped by the controller
       error: false,
     });
     expect(require('../middleware/user.js').ValidateUserId).toHaveBeenCalled();

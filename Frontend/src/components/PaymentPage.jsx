@@ -36,7 +36,7 @@ const PaymentPage = () => {
     const fetchOrderDetails = async () => {
       try {
         const response = await axios.get(
-          `http://localhost:5000/api/users/${userId}/order/${orderId}`,
+          `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}`,
           { withCredentials: true }
         );
         const { total_amount } = response.data.Orders;
@@ -56,7 +56,7 @@ const PaymentPage = () => {
   const verifyStripeSession = async (sessionId) => {
     try {
       const response = await axios.get(
-        `http://localhost:5000/api/stripe-session/${sessionId}`,
+        `${import.meta.env.VITE_API_URL}/api/stripe-session/${sessionId}`,
         { withCredentials: true }
       );
       if (response.data.status === 'paid') {
@@ -83,7 +83,7 @@ const PaymentPage = () => {
 
       if (paymentMethod === "Debit Card") {
         const response = await axios.post(
-          `http://localhost:5000/api/create-checkout-session`,
+          `${import.meta.env.VITE_API_URL}/api/create-checkout-session`,
           {
             orderId,
             userId,
@@ -116,7 +116,7 @@ const PaymentPage = () => {
         }
 
         await axios.post(
-          `http://localhost:5000/api/users/${userId}/order/${orderId}/payments`,
+          `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}/payments`,
           paymentData,
           { withCredentials: true }
         );

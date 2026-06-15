@@ -1,0 +1,136 @@
+name: Deploy
+
+# Deploys to AWS on every push to main. Authenticates via GitHub OIDC
+# (no long-lived AWS keys). Configure these repository variables/secrets:
+#   vars:    AWS_REGION, AWS_ACCOUNT_ID, PROJECT_NAME, LAMBDA_CODE_BUCKET
+#   secrets: AWS_DEPLOY_ROLE_ARN
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # required for OIDC
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  PROJECT: ${{ vars.PROJECT_NAME }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  deploy-api:
+    name: Build & deploy API (ECS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag & push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          REPO="$REGISTRY/${PROJECT}-api"
+          docker build -f backend/Dockerfile -t "$REPO:$IMAGE_TAG" -t "$REPO:latest" .
+          docker push "$REPO:$IMAGE_TAG"
+          docker push "$REPO:latest"
+
+      - name: Run database migration (one-off task)
+        run: |
+          aws ecs run-task \
+            --cluster "${PROJECT}-cluster" \
+            --launch-type FARGATE \
+            --task-definition "${PROJECT}-api" \
+            --network-configuration "awsvpcConfiguration={subnets=[$(aws cloudformation list-exports --query "Exports[?Name=='${PROJECT}-PrivateAppSubnets'].Value" --output text | tr ',' ' ' | tr ' ' ',')],securityGroups=[$(aws cloudformation list-exports --query "Exports[?Name=='${PROJECT}-EcsSgId'].Value" --output text)],assignPublicIp=DISABLED}" \
+            --overrides '{"containerOverrides":[{"name":"api","command":["npm","run","db:migrate"]}]}'
+
+      - name: Deploy new image to ECS service (rolling)
+        run: |
+          aws cloudformation deploy \
+            --stack-name "${PROJECT}-backend" \
+            --template-file infra/cloudformation/backend.yml \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides ProjectName=${PROJECT} ImageTag=${{ github.sha }} \
+            --no-fail-on-empty-changeset
+
+      - name: Wait for service to stabilize
+        run: aws ecs wait services-stable --cluster "${PROJECT}-cluster" --services "${PROJECT}-api"
+
+  # ---------------------------------------------------------------------------
+  deploy-lambdas:
+    name: Package & deploy Lambdas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: ".nvmrc" }
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build & upload Lambda artifacts
+        run: |
+          for fn in stripe-webhook image-processor order-email; do
+            (cd "infra/lambdas/$fn" && npm install --omit=dev && zip -rq "../$fn.zip" .)
+            aws s3 cp "infra/lambdas/$fn.zip" "s3://${{ vars.LAMBDA_CODE_BUCKET }}/lambdas/$fn.zip"
+          done
+
+      - name: Deploy Lambda stack
+        run: |
+          aws cloudformation deploy \
+            --stack-name "${PROJECT}-lambda" \
+            --template-file infra/cloudformation/lambda.yml \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides ProjectName=${PROJECT} LambdaCodeBucket=${{ vars.LAMBDA_CODE_BUCKET }} \
+            --no-fail-on-empty-changeset
+
+  # ---------------------------------------------------------------------------
+  deploy-frontend:
+    name: Build & deploy frontend (S3 + CloudFront)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build frontend
+        working-directory: Frontend
+        env:
+          VITE_API_URL: https://${{ vars.PUBLIC_DOMAIN }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Resolve infra outputs
+        id: infra
+        run: |
+          echo "bucket=$(aws cloudformation list-exports --query "Exports[?Name=='${PROJECT}-SpaBucket'].Value" --output text)" >> "$GITHUB_OUTPUT"
+          echo "dist=$(aws cloudformation list-exports --query "Exports[?Name=='${PROJECT}-DistributionId'].Value" --output text)" >> "$GITHUB_OUTPUT"
+
+      - name: Sync to S3 & invalidate CloudFront
+        run: |
+          aws s3 sync Frontend/dist "s3://${{ steps.infra.outputs.bucket }}" --delete
+          aws cloudfront create-invalidation --distribution-id "${{ steps.infra.outputs.dist }}" --paths "/*"

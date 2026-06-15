@@ -22,7 +22,7 @@ const OrderConfirmationPage = () => {
       try {
         // Fetch payment details for the order
         const paymentResponse = await axios.get(
-          `http://localhost:5000/api/users/${userId}/order/${orderId}/payments`,
+          `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}/payments`,
           { withCredentials: true }
         );
 
@@ -37,7 +37,7 @@ const OrderConfirmationPage = () => {
 
         // Fetch order details
         const orderResponse = await axios.get(
-          `http://localhost:5000/api/users/${userId}/order/${orderId}`,
+          `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}`,
           { withCredentials: true }
         );
         setOrderDetails(orderResponse.data.Orders); // Set order details
@@ -63,7 +63,7 @@ const OrderConfirmationPage = () => {
 
       // Confirm the order
       const response = await axios.put(
-        `http://localhost:5000/api/users/${userId}/order/${orderId}/payments/${paymentId}`,
+        `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}/payments/${paymentId}`,
         { paymentStatus: "COMPLETED" },
         { withCredentials: true }
       );

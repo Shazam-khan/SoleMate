@@ -1,5 +1,6 @@
 import { db } from "../DB/connect.js";
 import { v4 as uuid } from "uuid";
+import { logger } from "../utils/logger.js";
 
 // Create a payment
 export const createPayment = async (req, res) => {
@@ -43,7 +44,7 @@ export const createPayment = async (req, res) => {
       Payment: result.rows[0],
     });
   } catch (error) {
-    console.error("Error creating payment:", error);
+    logger.error("Error creating payment:", error);
     return res.status(500).json({
       message: "Error creating payment.",
       error: true,
@@ -83,8 +84,6 @@ export const updatePaymentStatus = async (req, res) => {
       });
     }
 
-    const payment = paymentResult.rows[0];
-
     // If payment is completed, mark the associated order as completed
     if (paymentStatus === "COMPLETED") {
       const orderResult = await db.query(
@@ -113,7 +112,7 @@ export const updatePaymentStatus = async (req, res) => {
     });
   } catch (error) {
     await db.query("ROLLBACK");
-    console.error("Error updating payment status:", error);
+    logger.error("Error updating payment status:", error);
     return res.status(500).json({
       message: "Error updating payment status.",
       error: true,
@@ -137,7 +136,7 @@ export const getAllPayments = async (req, res) => {
       Payments: result.rows,
     });
   } catch (error) {
-    console.error("Error fetching payments:", error);
+    logger.error("Error fetching payments:", error);
     return res.status(500).json({
       message: "Error fetching payments.",
       error: true,
@@ -169,7 +168,7 @@ export const getPaymentById = async (req, res) => {
       Payment: result.rows[0],
     });
   } catch (error) {
-    console.error("Error fetching payment:", error);
+    logger.error("Error fetching payment:", error);
     return res.status(500).json({
       message: "Error fetching payment.",
       error: true,

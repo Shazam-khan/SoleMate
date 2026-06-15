@@ -18,7 +18,7 @@ const AddressPage = () => {
     const fetchOrderDetails = async () => {
       try {
         const response = await axios.get(
-          `http://localhost:5000/api/users/${userId}/order/${orderId}`,
+          `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}`,
           { withCredentials: true }
         );
         setOrderDetails(response.data.Orders);
@@ -44,7 +44,7 @@ const AddressPage = () => {
 
     try {
       const response = await axios.put(
-        `http://localhost:5000/api/users/${userId}/order/${orderId}`,
+        `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}`,
         { address },
         { withCredentials: true }
       );

@@ -1,4 +1,12 @@
 import { db } from "../DB/connect.js";
+import { hashPassword } from "../utils/password.js";
+import { logger } from "../utils/logger.js";
+
+const sanitizeUser = (user) => {
+  if (!user) return null;
+  const { password, ...safe } = user;
+  return safe;
+};
 
 export const getAllUsers = async (req, res) => {
   try {
@@ -11,11 +19,11 @@ export const getAllUsers = async (req, res) => {
 
     return res.json({
       message: "Users Found",
-      Users: users.rows,
+      Users: users.rows.map(sanitizeUser),
       error: false,
     });
   } catch (error) {
-    console.error(error);
+    logger.error({ err: error }, "getAllUsers failed");
     return res
       .status(500)
       .json({ message: "Error fetching users", Users: null, error: true });
@@ -23,24 +31,36 @@ export const getAllUsers = async (req, res) => {
 };
 
 export const getUserById = async (req, res) => {
-  res.status(200).json({ message: "User found", User: req.user, error: false });
+  res.status(200).json({
+    message: "User found",
+    User: sanitizeUser(req.targetUser),
+    error: false,
+  });
 };
 
 export const updateInfo = async (req, res) => {
   const { fname, lname, email, password, phoneNumber } = req.body;
   const { userId } = req.params;
 
-  try {
-    const updatedFname = fname || existingUser.rows[0].first_name;
-    const updatedLname = lname || existingUser.rows[0].last_name;
-    const updatedEmail = email || existingUser.rows[0].email;
-    const updatedPassword = password || existingUser.rows[0].password;
-    const updatedPhoneNumber = phoneNumber || existingUser.rows[0].phone_number;
+  // req.targetUser is populated by the ValidateUserId param middleware.
+  const existing = req.targetUser;
+  if (!existing) {
+    return res.status(404).json({ message: "User not found", error: true });
+  }
 
-    // Update query
+  try {
+    const updatedFname = fname || existing.first_name;
+    const updatedLname = lname || existing.last_name;
+    const updatedEmail = email || existing.email;
+    // Only hash + change the password if a new one was supplied.
+    const updatedPassword = password
+      ? await hashPassword(password)
+      : existing.password;
+    const updatedPhoneNumber = phoneNumber || existing.phone_number;
+
     const updateQuery = `
       UPDATE "Users"
-      SET 
+      SET
         first_name = $1,
         last_name = $2,
         email = $3,
@@ -50,7 +70,6 @@ export const updateInfo = async (req, res) => {
       RETURNING *;
     `;
 
-    // Execute the update query
     const updatedUser = await db.query(updateQuery, [
       updatedFname,
       updatedLname,
@@ -62,14 +81,14 @@ export const updateInfo = async (req, res) => {
 
     return res.status(200).json({
       message: "User information updated successfully",
-      User: updatedUser.rows[0],
+      User: sanitizeUser(updatedUser.rows[0]),
       error: false,
     });
   } catch (error) {
-    console.error(error);
+    logger.error({ err: error }, "updateInfo failed");
     return res
       .status(500)
-      .json({ message: "Error updating users", Users: null, error: true });
+      .json({ message: "Error updating user", error: true });
   }
 };
 
@@ -77,15 +96,11 @@ export const deleteUser = async (req, res) => {
   const { userId } = req.params;
   try {
     await db.query('DELETE FROM "Users" WHERE u_id = $1', [userId]);
-    return res.status(204).json({
-      message: "User deleted successfully",
-      Users: null,
-      error: false,
-    });
+    return res.status(204).send();
   } catch (error) {
-    console.error(error);
+    logger.error({ err: error }, "deleteUser failed");
     return res
       .status(500)
-      .json({ message: "Error deleting user", Users: null, error: true });
+      .json({ message: "Error deleting user", error: true });
   }
 };

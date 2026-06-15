@@ -1,5 +1,6 @@
 import { db } from "../DB/connect.js";
 import { v4 as uuid } from "uuid";
+import { logger } from "../utils/logger.js";
 
 // Get all orders (with optional user filter)
 export const getAllOrders = async (req, res) => {
@@ -27,7 +28,7 @@ export const getAllOrders = async (req, res) => {
       Orders: orders.rows,
     });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     return res.status(500).json({
       message: "Error fetching orders",
       error: true,
@@ -59,7 +60,7 @@ export const getOrderById = async (req, res) => {
       Orders: order.rows[0],
     });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     return res.status(500).json({
       message: "Error fetching order",
       error: true,
@@ -71,7 +72,7 @@ export const getOrderById = async (req, res) => {
 // Get current incomplete order for a user
 export const getCurrentOrder = async (req, res) => {
   const { userId } = req.params;
-  console.log("Fetching current order for user:", userId);
+  logger.debug("Fetching current order for user:", userId);
 
   try {
     const currentOrder = await db.query(
@@ -88,7 +89,7 @@ export const getCurrentOrder = async (req, res) => {
       });
     }
 
-    console.log("Current order retrieved:", currentOrder.rows[0]);
+    logger.debug("Current order retrieved:", currentOrder.rows[0]);
 
     return res.status(200).json({
       message: "Current order retrieved successfully",
@@ -96,7 +97,7 @@ export const getCurrentOrder = async (req, res) => {
       Orders: currentOrder.rows[0],
     });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     return res.status(500).json({
       message: "Error retrieving current order",
       error: true,
@@ -191,7 +192,7 @@ export const createOrder = async (req, res) => {
     });
   } catch (error) {
     await db.query("ROLLBACK");
-    console.error(error);
+    logger.error(error);
     return res.status(500).json({
       message: "Error creating order",
       error: true,
@@ -235,7 +236,7 @@ export const patchOrder = async (req, res) => {
       Orders: result.rows[0],
     });
   } catch (error) {
-    console.error("Error updating order:", error);
+    logger.error("Error updating order:", error);
     return res.status(500).json({
       message: "Error updating order",
       error: true,
@@ -281,7 +282,7 @@ export const deleteOrder = async (req, res) => {
     });
   } catch (error) {
     await db.query("ROLLBACK");
-    console.error(error);
+    logger.error(error);
     return res.status(500).json({
       message: "Error deleting order",
       error: true,

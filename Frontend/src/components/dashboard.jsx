@@ -14,7 +14,7 @@ const AdminDashboard = () => {
     images: [],
   });
 
-  const BASE_URL = "http://localhost:5000/api/products";
+  const BASE_URL = `${import.meta.env.VITE_API_URL}/api/products`;
 
   useEffect(() => {
     // Fetch all products

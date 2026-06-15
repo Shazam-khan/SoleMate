@@ -3,7 +3,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import ReactLoading from "react-loading";
 
-const API_URL = "http://localhost:5000/api/products";
+const API_URL = `${import.meta.env.VITE_API_URL}/api/products`;
 const PLACEHOLDER_IMAGE = "https://via.placeholder.com/200";
 
 function Products() {

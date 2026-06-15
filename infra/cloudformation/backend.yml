@@ -1,0 +1,256 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  SoleMate - Backend stack. ECR repository, ECS Fargate cluster/service running
+  the Express API, an internet-facing ALB, IAM roles, CloudWatch logs and
+  target-tracking auto-scaling. Depends on the network and database stacks.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: solemate
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: ECR image tag to deploy (CI passes the git SHA)
+  ContainerPort:
+    Type: Number
+    Default: 5000
+  DesiredCount:
+    Type: Number
+    Default: 2
+  TaskCpu:
+    Type: String
+    Default: "256"
+  TaskMemory:
+    Type: String
+    Default: "512"
+  ClientUrl:
+    Type: String
+    Default: "https://app.example.com"
+    Description: Allowed CORS origin(s) for the frontend
+
+Resources:
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${ProjectName}-api"
+      ImageScanningConfiguration: { ScanOnPush: true }
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          { "rules": [ { "rulePriority": 1, "description": "keep last 10 images",
+            "selection": { "tagStatus": "any", "countType": "imageCountMoreThan", "countNumber": 10 },
+            "action": { "type": "expire" } } ] }
+
+  # Application JWT secret (DB creds come from the database stack's secret).
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${ProjectName}/app"
+      GenerateSecretString:
+        SecretStringTemplate: "{}"
+        GenerateStringKey: "JWT_SECRET"
+        PasswordLength: 48
+        ExcludeCharacters: '"@/\ '
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${ProjectName}-api"
+      RetentionInDays: 30
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${ProjectName}-cluster"
+      ClusterSettings: [{ Name: containerInsights, Value: enabled }]
+
+  # --- IAM roles ------------------------------------------------------------
+  # Pulls images, writes logs, and reads the two secrets at task start.
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: read-secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref AppSecret
+                  - !ImportValue
+                    Fn::Sub: "${ProjectName}-DbSecretArn"
+
+  # The role the application code runs as (e.g. to presign S3 image uploads).
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: app-permissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ["s3:PutObject", "s3:GetObject"]
+                Resource: !Sub "arn:aws:s3:::${ProjectName}-product-images/*"
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${ProjectName}-api"
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: api
+          Image: !Sub "${EcrRepository.RepositoryUri}:${ImageTag}"
+          Essential: true
+          PortMappings: [{ ContainerPort: !Ref ContainerPort }]
+          Environment:
+            - { Name: NODE_ENV, Value: production }
+            - { Name: PORT, Value: !Ref ContainerPort }
+            - { Name: CLIENT_URL, Value: !Ref ClientUrl }
+            - { Name: DB_SSL, Value: "true" }
+            - Name: DB_HOST
+              Value: !ImportValue { "Fn::Sub": "${ProjectName}-DbEndpoint" }
+            - Name: DB_PORT
+              Value: !ImportValue { "Fn::Sub": "${ProjectName}-DbPort" }
+            - Name: DB_NAME
+              Value: !ImportValue { "Fn::Sub": "${ProjectName}-DbName" }
+          Secrets:
+            - Name: JWT_SECRET
+              ValueFrom: !Sub "${AppSecret}:JWT_SECRET::"
+            - Name: DB_USER
+              ValueFrom: !Sub
+                - "${Arn}:username::"
+                - Arn: !ImportValue { "Fn::Sub": "${ProjectName}-DbSecretArn" }
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub
+                - "${Arn}:password::"
+                - Arn: !ImportValue { "Fn::Sub": "${ProjectName}-DbSecretArn" }
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: api
+
+  # --- Load balancer --------------------------------------------------------
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${ProjectName}-alb"
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups:
+        - !ImportValue { "Fn::Sub": "${ProjectName}-AlbSgId" }
+      Subnets: !Split
+        - ","
+        - !ImportValue { "Fn::Sub": "${ProjectName}-PublicSubnets" }
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-tg"
+      VpcId: !ImportValue { "Fn::Sub": "${ProjectName}-VpcId" }
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: { HttpCode: "200" }
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      # In production add an HTTPS:443 listener with an ACM certificate and
+      # redirect HTTP -> HTTPS.
+
+  # --- ECS service ----------------------------------------------------------
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: HttpListener
+    Properties:
+      ServiceName: !Sub "${ProjectName}-api"
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !ImportValue { "Fn::Sub": "${ProjectName}-EcsSgId" }
+          Subnets: !Split
+            - ","
+            - !ImportValue { "Fn::Sub": "${ProjectName}-PrivateAppSubnets" }
+      LoadBalancers:
+        - ContainerName: api
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroup
+
+  # --- Auto scaling (target tracking on CPU) -------------------------------
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      ServiceNamespace: ecs
+      ResourceId: !Sub "service/${Cluster}/${Service.Name}"
+      ScalableDimension: ecs:service:DesiredCount
+      MinCapacity: 1
+      MaxCapacity: 6
+      RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService"
+
+  CpuScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: cpu-target-tracking
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70.0
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+
+Outputs:
+  EcrRepositoryUri:
+    Value: !GetAtt EcrRepository.RepositoryUri
+    Export: { Name: !Sub "${ProjectName}-EcrUri" }
+  AlbDnsName:
+    Value: !GetAtt LoadBalancer.DNSName
+    Export: { Name: !Sub "${ProjectName}-AlbDns" }
+  ClusterName:
+    Value: !Ref Cluster
+    Export: { Name: !Sub "${ProjectName}-ClusterName" }
+  ServiceName:
+    Value: !GetAtt Service.Name
+    Export: { Name: !Sub "${ProjectName}-ServiceName" }

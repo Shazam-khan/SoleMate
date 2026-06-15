@@ -1,0 +1,219 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  SoleMate - Network stack. VPC with public, private-app and private-data subnets
+  across two AZs, an Internet Gateway, a NAT Gateway, route tables, and the core
+  security groups. Exports are consumed by the database, backend and lambda stacks.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: solemate
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+
+Mappings:
+  Subnets:
+    Public:    { A: 10.0.0.0/24,  B: 10.0.1.0/24 }
+    PrivateApp:  { A: 10.0.10.0/24, B: 10.0.11.0/24 }
+    PrivateData: { A: 10.0.20.0/24, B: 10.0.21.0/24 }
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-vpc" }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-igw" }]
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  # --- Public subnets -------------------------------------------------------
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !FindInMap [Subnets, Public, A]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-public-a" }]
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !FindInMap [Subnets, Public, B]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-public-b" }]
+
+  # --- Private application subnets ------------------------------------------
+  PrivateAppSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !FindInMap [Subnets, PrivateApp, A]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-app-a" }]
+
+  PrivateAppSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !FindInMap [Subnets, PrivateApp, B]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-app-b" }]
+
+  # --- Private data subnets -------------------------------------------------
+  PrivateDataSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !FindInMap [Subnets, PrivateData, A]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-data-a" }]
+
+  PrivateDataSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !FindInMap [Subnets, PrivateData, B]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-data-b" }]
+
+  # --- NAT gateway (single, in public subnet A) ----------------------------
+  NatEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-nat" }]
+
+  # --- Route tables ---------------------------------------------------------
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-public-rt" }]
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PublicSubnetA, RouteTableId: !Ref PublicRouteTable }
+  PublicSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PublicSubnetB, RouteTableId: !Ref PublicRouteTable }
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-private-rt" }]
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateAppSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PrivateAppSubnetA, RouteTableId: !Ref PrivateRouteTable }
+  PrivateAppSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PrivateAppSubnetB, RouteTableId: !Ref PrivateRouteTable }
+  PrivateDataSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PrivateDataSubnetA, RouteTableId: !Ref PrivateRouteTable }
+  PrivateDataSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PrivateDataSubnetB, RouteTableId: !Ref PrivateRouteTable }
+
+  # --- Security groups ------------------------------------------------------
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public ALB - allow HTTP/HTTPS from anywhere
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-alb-sg" }]
+
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ECS tasks - allow traffic only from the ALB
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-ecs-sg" }]
+
+  EcsIngressFromAlb:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref EcsSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5000
+      ToPort: 5000
+      SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS - allow Postgres only from ECS tasks
+      VpcId: !Ref Vpc
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-rds-sg" }]
+
+  RdsIngressFromEcs:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RdsSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref EcsSecurityGroup
+
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+    Export: { Name: !Sub "${ProjectName}-VpcId" }
+  PublicSubnets:
+    Value: !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]]
+    Export: { Name: !Sub "${ProjectName}-PublicSubnets" }
+  PrivateAppSubnets:
+    Value: !Join [",", [!Ref PrivateAppSubnetA, !Ref PrivateAppSubnetB]]
+    Export: { Name: !Sub "${ProjectName}-PrivateAppSubnets" }
+  PrivateDataSubnets:
+    Value: !Join [",", [!Ref PrivateDataSubnetA, !Ref PrivateDataSubnetB]]
+    Export: { Name: !Sub "${ProjectName}-PrivateDataSubnets" }
+  AlbSecurityGroupId:
+    Value: !Ref AlbSecurityGroup
+    Export: { Name: !Sub "${ProjectName}-AlbSgId" }
+  EcsSecurityGroupId:
+    Value: !Ref EcsSecurityGroup
+    Export: { Name: !Sub "${ProjectName}-EcsSgId" }
+  RdsSecurityGroupId:
+    Value: !Ref RdsSecurityGroup
+    Export: { Name: !Sub "${ProjectName}-RdsSgId" }
