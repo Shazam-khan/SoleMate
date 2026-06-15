@@ -97,21 +97,11 @@ const Cart = () => {
     }
 
     try {
-      const item = cartItems.find((item) => item.od_id === od_id);
-      if (!item) {
-        alert("Item not found in cart.");
-        return;
-      }
-
-      const updatedPricef = (item.od_price / item.quantity) * newQuantity;
-      const updatedPrice = Math.floor(updatedPricef);
-      
+      // od_price is the UNIT price and must not change with quantity. The
+      // backend recomputes the order total as SUM(quantity * od_price).
       const response = await axios.put(
         `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}/order_details/${od_id}`,
-        {
-          quantity: newQuantity,
-          odPrice: updatedPrice,
-        },
+        { quantity: newQuantity },
         { withCredentials: true }
       );
 
