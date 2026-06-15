@@ -226,7 +226,8 @@ Resources:
       ScalableDimension: ecs:service:DesiredCount
       MinCapacity: 1
       MaxCapacity: 6
-      RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService"
+      # RoleARN omitted on purpose: Application Auto Scaling creates/uses the
+      # ECS service-linked role automatically on first use.
 
   CpuScalingPolicy:
     Type: AWS::ApplicationAutoScaling::ScalingPolicy
