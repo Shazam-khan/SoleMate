@@ -260,7 +260,7 @@ const Cart = () => {
                         +
                       </button>
                     </div>
-                    <p>Price: ${item.od_price.toFixed(2)}</p>
+                    <p>Price: ${Number(item.od_price || 0).toFixed(2)}</p>
                   </div>
                   <div className="flex items-center">
                     {/* <p className="text-lg font-semibold mr-4">

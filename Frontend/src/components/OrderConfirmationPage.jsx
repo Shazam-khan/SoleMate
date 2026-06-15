@@ -75,7 +75,7 @@ const OrderConfirmationPage = () => {
         {
           to_name: userEmail.split("@")[0], // Use part of email as a placeholder for the name
           orderId: orderDetails.o_id,
-          totalAmount: orderDetails.total_amount.toFixed(2),
+          totalAmount: Number(orderDetails.total_amount || 0).toFixed(2),
           address: orderDetails.address,
           customerEmail: userEmail, // Dynamically pass the customer's email
         },
@@ -119,7 +119,7 @@ const OrderConfirmationPage = () => {
           <div className="p-4 space-y-3 border rounded-md shadow-sm">
             <h2 className="text-xl font-bold">Order Details: </h2>
             <p>Order ID: {orderDetails?.o_id}</p>
-            <p>Total Amount: ${orderDetails?.total_amount?.toFixed(2)}</p>
+            <p>Total Amount: ${Number(orderDetails?.total_amount || 0).toFixed(2)}</p>
             <p>Address: {orderDetails?.address}</p>
 
             <button

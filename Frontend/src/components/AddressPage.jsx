@@ -83,7 +83,7 @@ const AddressPage = () => {
           <div className="p-4 border space-y-4 rounded-md shadow-sm">
             <h2 className="text-xl font-bold">Order Summary: </h2>
             <p>Order ID: {orderDetails?.o_id}</p>
-            <p>Total Amount: ${orderDetails?.total_amount?.toFixed(2)}</p>
+            <p>Total Amount: ${Number(orderDetails?.total_amount || 0).toFixed(2)}</p>
           </div>
 
           {/* Address Form */}

@@ -190,7 +190,7 @@ const ProductDetail = () => {
             <p className="text-xl">
               Price:{" "}
               <span className="text-2xl font-semibold">
-                ${product?.price?.toFixed(2) || "0.00"}
+                ${Number(product?.price || 0).toFixed(2)}
               </span>
             </p>
 
