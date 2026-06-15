@@ -61,32 +61,37 @@ const OrderConfirmationPage = () => {
     try {
       setLoading(true);
 
-      // Confirm the order
-      const response = await axios.put(
+      // Confirm the order (marks payment COMPLETED -> order complete)
+      await axios.put(
         `${import.meta.env.VITE_API_URL}/api/users/${userId}/order/${orderId}/payments/${paymentId}`,
         { paymentStatus: "COMPLETED" },
         { withCredentials: true }
       );
 
-      // Send email using EmailJS
-      await emailjs.send(
-        "service_dx5aw5i", // Replace with your EmailJS Service ID
-        "template_jyh66be", // Replace with your EmailJS Template ID
-        {
-          to_name: userEmail.split("@")[0], // Use part of email as a placeholder for the name
-          orderId: orderDetails.o_id,
-          totalAmount: Number(orderDetails.total_amount || 0).toFixed(2),
-          address: orderDetails.address,
-          customerEmail: userEmail, // Dynamically pass the customer's email
-        },
-        "onjGx22fMfcQtPE4H" // Replace with your EmailJS User ID
-      );
+      // Best-effort confirmation email — must NOT block the order. In the AWS
+      // architecture this is handled server-side by the order-email Lambda (SES).
+      try {
+        await emailjs.send(
+          "service_dx5aw5i",
+          "template_jyh66be",
+          {
+            to_name: userEmail?.split("@")[0],
+            orderId: orderDetails.o_id,
+            totalAmount: Number(orderDetails.total_amount || 0).toFixed(2),
+            address: orderDetails.address,
+            customerEmail: userEmail,
+          },
+          "onjGx22fMfcQtPE4H"
+        );
+      } catch (emailErr) {
+        console.warn("Confirmation email skipped (EmailJS not configured):", emailErr?.message);
+      }
 
-      alert("Order confirmed and email sent successfully!");
-      navigate("/"); // Redirect to homepage or another relevant page
+      alert("Order confirmed successfully!");
+      navigate("/"); // Redirect to homepage
     } catch (err) {
-      console.error("Failed to confirm the order or send email:", err);
-      alert("Failed to confirm the order or send email. Please try again.");
+      console.error("Failed to confirm the order:", err);
+      alert("Failed to confirm the order. Please try again.");
     } finally {
       setLoading(false);
     }
