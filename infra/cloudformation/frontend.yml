@@ -35,10 +35,12 @@ Resources:
       DistributionConfig:
         Enabled: true
         DefaultRootObject: index.html
-        # SPA routing: send 403/404 back to index.html so client-side routes work.
+        # SPA routing: S3 returns 403 for missing keys (bucket policy grants
+        # GetObject only, no ListBucket), so 403 -> index.html covers client-side
+        # routes. We deliberately do NOT remap 404 so that genuine API 404s from
+        # the /api/* (ALB) origin pass through to the SPA instead of being masked.
         CustomErrorResponses:
           - { ErrorCode: 403, ResponseCode: 200, ResponsePagePath: /index.html }
-          - { ErrorCode: 404, ResponseCode: 200, ResponsePagePath: /index.html }
         Origins:
           - Id: s3-spa
             DomainName: !GetAtt SpaBucket.RegionalDomainName
