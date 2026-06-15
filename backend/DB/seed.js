@@ -50,6 +50,36 @@ const run = async () => {
   } else {
     logger.info("Products already present, skipping product seed");
   }
+
+  // --- Ensure every product has at least one image (idempotent) -----------
+  // Safe to re-run against an already-seeded database.
+  const imageByName = {
+    "Cloud Runner":
+      "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&q=80",
+    "Street Classic":
+      "https://images.unsplash.com/photo-1460353581641-37baddab0fa2?w=600&q=80",
+    "Trail Blazer":
+      "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=600&q=80",
+  };
+  const DEFAULT_IMAGE =
+    "https://images.unsplash.com/photo-1600185365926-3a2ce3cdb9eb?w=600&q=80";
+
+  const allProducts = await db.query("SELECT p_id, p_name FROM product");
+  let added = 0;
+  for (const p of allProducts.rows) {
+    const has = await db.query(
+      `SELECT 1 FROM "P_Images" WHERE product_id = $1 LIMIT 1`,
+      [p.p_id]
+    );
+    if (has.rows.length === 0) {
+      await db.query(
+        `INSERT INTO "P_Images" (id, image_url, product_id) VALUES ($1, $2, $3)`,
+        [uuid(), imageByName[p.p_name] || DEFAULT_IMAGE, p.p_id]
+      );
+      added++;
+    }
+  }
+  logger.info({ added }, "Ensured product images");
 };
 
 run()
