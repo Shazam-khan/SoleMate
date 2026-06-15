@@ -159,10 +159,12 @@ export const getProductCategory = async (req, res) => {
     );
 
     if (category.rows.length === 0) {
-      return res.status(404).json({
-        message: "Category not found for this product",
-        Category: null,
-        error: true,
+      // A product with no category is not an error (consistent with the
+      // images endpoint) — return an empty list with 200.
+      return res.status(200).json({
+        message: "No categories for this product",
+        Category: [],
+        error: false,
       });
     }
 
