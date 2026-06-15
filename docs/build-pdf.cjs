@@ -8,7 +8,7 @@ let md = fs.readFileSync(path.join(ROOT, "DESIGN.md"), "utf8");
 
 // Replace each ```mermaid block with the matching rendered PNG (base64-inlined).
 let idx = 0;
-md = md.replace(/```mermaid\n[\s\S]*?```/g, () => {
+md = md.replace(/```mermaid\r?\n[\s\S]*?```/g, () => {
   idx++;
   const file = path.join(ROOT, "diagrams", `diagram-${idx}.png`);
   const b64 = fs.readFileSync(file).toString("base64");

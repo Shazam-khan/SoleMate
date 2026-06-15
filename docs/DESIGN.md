@@ -2,6 +2,7 @@
 
 **Project:** SoleMate (footwear ecommerce platform)
 **Document type:** Architecture & DevOps design
+**Group members:** M Shazam Khan (22K4207) · Hasnain Raza (22K4284)
 **Cloud target:** Amazon Web Services (ECS Fargate + Lambda)
 **IaC:** AWS CloudFormation (YAML) · **CI/CD:** GitHub Actions
 
